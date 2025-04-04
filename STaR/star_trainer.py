@@ -5,11 +5,11 @@ import time
 import wandb
 import torch
 import argparse
+import matplotlib.pyplot as plt
 
 from typing import List
 from datasets import Dataset
 from dotenv import load_dotenv
-import matplotlib.pyplot as plt
 from vllm import LLM, SamplingParams
 from trl import SFTConfig, SFTTrainer
 from arithmetic_dataset import generate_dataset
