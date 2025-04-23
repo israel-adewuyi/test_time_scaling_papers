@@ -1,5 +1,6 @@
 import torch
 
+from beams import Beam
 from torch import Tensor
 from jaxtyping import Float, Int
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -72,6 +73,23 @@ class Transformer_Sampler:
             int: The index of the token with the highest logit.
         """
         return torch.argmax(logits).item()
+
+    @torch.inference_mode()
+    def beam_search(
+        self, 
+        prompt: str,
+        num_beams: int, 
+        num_return_sequences: int, 
+        max_new_tokens: int, 
+    ):
+        input_toks = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
+
+        best_beams = Beam(self.model, self.tokenizer, torch.tensor([0.0]).to(self.device), input_toks)
+        
+        for _ in range(max_new_tokens):
+            best_beams = best_beams.generate(num_beams=num_beams)
+            print(best_beams)
+            break
         
 
     def __str__(self):
@@ -89,4 +107,6 @@ if __name__ == "__main__":
     transformer_sampler = Transformer_Sampler(model, tokenizer, device)
 
     prompt = "The dog"
-    print(transformer_sampler.sample(prompt, max_new_tokens=512, temperature=0.0))
+    print(transformer_sampler.sample(prompt, max_new_tokens=32, temperature=0.0))
+
+    transformer_sampler.beam_search(prompt, 3, 2, 32)
