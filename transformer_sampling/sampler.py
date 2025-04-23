@@ -84,11 +84,12 @@ class Transformer_Sampler:
     ):
         input_toks = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
 
-        best_beams = Beam(self.model, self.tokenizer, torch.tensor([0.0]).to(self.device), input_toks)
+        best_beams = Beam(self.model, self.tokenizer, torch.tensor([0.0, 0.0, 0.0]).to(self.device), input_toks)
         
         for _ in range(max_new_tokens):
             best_beams = best_beams.generate(num_beams=num_beams)
-            print(best_beams)
+            print(best_beams.logprob_sums, best_beams.tokens)
+            best_beams = best_beams.filter(num_beams)
             break
         
 
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     
     transformer_sampler = Transformer_Sampler(model, tokenizer, device)
 
-    prompt = "The dog"
-    print(transformer_sampler.sample(prompt, max_new_tokens=32, temperature=0.0))
+    prompt = ["The dog", "The cat", "The mouse"]
+    # print(transformer_sampler.sample(prompt, max_new_tokens=32, temperature=0.0))
 
     transformer_sampler.beam_search(prompt, 3, 2, 32)

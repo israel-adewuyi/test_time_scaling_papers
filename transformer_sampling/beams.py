@@ -21,35 +21,19 @@ class Beam:
     def generate(
         self,
         num_beams: int
-    ):
+    ) -> "Beam":
         logprobs = self.model(self.tokens).logits[:, -1, :].log_softmax(-1)
-        topk_logprobs, topk_toks = torch.topk(logprobs, k=num_beams, dim=-1)
-
-        print(f"{'=' * 20} Before beam generation {'=' * 20}")
-        print(f"Log probs sum tensor is {self.logprob_sums}")
-        print(f"Log probs sum tensor has shape {self.logprob_sums.shape}")
-        print(f"Tokens tensor is {self.tokens}")
-        print(f"Tokens tensor has shape {self.tokens.shape}")
-
-        print(f"{'=' * 20} During beam generation {'=' * 20} \n\n\n")
-        print(f"Top k logprobs: {topk_logprobs}")
-        print(f"Top k tokens: {topk_toks}")
-
-        print(f"{'=' * 20} After beam generation {'=' * 20} \n\n\n")
-        
-        new_logprob_sums = einops.repeat(self.logprob_sums, "b -> 1 (b k)", k=num_beams) + topk_logprobs
-        print(f"New log probs sum tensor is {new_logprob_sums.flatten()}")
-        print(f"New log probs sum tensor has shape {new_logprob_sums.flatten().shape}")
-        new_tokens = torch.cat([einops.repeat(self.tokens, "b s -> b k s", k=num_beams), topk_toks.unsqueeze(-1)], dim=-1)
-        print(f"Result of concatting tokens after reshaping: {new_tokens.flatten(0,1)}")
-        print(f"Shape of reshaped tensor: {new_tokens.flatten(0,1).shape}")
-
+        topk_logprobs, topk_toks = logprobs.topk(k=num_beams, dim=-1) 
+        new_logprob_sums = einops.repeat(self.logprob_sums, "b -> b k", k=num_beams) + topk_logprobs # num_beams, num_beams (after 1st iteration)
+        new_tokens = torch.cat([einops.repeat(self.tokens, "b s -> b k s", k=num_beams), topk_toks.unsqueeze(-1)], dim=-1) # num_beams num_beams seq_len (after 1st iteration)
         return Beam(self.model, self.tokenizer, new_logprob_sums.flatten(), new_tokens.flatten(0, 1))
 
-        
-        # print(res)
-        # print(type(res))
-        # return "Got here in beam search dataclass"
+    def filter(
+        self, 
+        num_beams: int
+    ) -> "Beam":
+        top_beam_indices = self.logprob_sums.topk(k=num_beams).indices.tolist()
+        top_logprob_sums = self.logprob_sums[top_beam_indices]
+        top_beams = self.tokens[top_beam_indices]
 
-    def filter():
-        pass
+        return Beam(self.model, self.tokenizr, top_logprob_sums, top_beams)
