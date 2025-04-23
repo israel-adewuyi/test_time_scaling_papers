@@ -18,6 +18,10 @@ class Beam:
     def __getitem__(self, batch_idx: int) -> "Beam":
         return Beam(self.model, self.tokenizer, self.logprob_sums[batch_idx], self.tokens[batch_idx, :])
 
+    def get_logprobs_and_completions(self) -> list[tuple[float, str]]:
+        return [(logprob_sum, self.tokenizer.decode(tokens))
+        for logprob_sum, tokens in zip(self.logprob_sums, self.tokens)]
+
     def generate(
         self,
         num_beams: int
@@ -36,4 +40,4 @@ class Beam:
         top_logprob_sums = self.logprob_sums[top_beam_indices]
         top_beams = self.tokens[top_beam_indices]
 
-        return Beam(self.model, self.tokenizr, top_logprob_sums, top_beams)
+        return Beam(self.model, self.tokenizer, top_logprob_sums, top_beams)
