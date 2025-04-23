@@ -18,6 +18,7 @@ class Beam:
     def __getitem__(self, batch_idx: int) -> "Beam":
         return Beam(self.model, self.tokenizer, self.logprob_sums[batch_idx], self.tokens[batch_idx, :])
 
+    @property
     def get_logprobs_and_completions(self) -> list[tuple[float, str]]:
         return [(logprob_sum, self.tokenizer.decode(tokens))
         for logprob_sum, tokens in zip(self.logprob_sums, self.tokens)]
@@ -26,6 +27,9 @@ class Beam:
         self,
         num_beams: int
     ) -> "Beam":
+        """
+        Generate new beams by expanding the current beams with top-k predictions.
+        """
         logprobs = self.model(self.tokens).logits[:, -1, :].log_softmax(-1)
         topk_logprobs, topk_toks = logprobs.topk(k=num_beams, dim=-1) 
         new_logprob_sums = einops.repeat(self.logprob_sums, "b -> b k", k=num_beams) + topk_logprobs # num_beams, num_beams (after 1st iteration)
@@ -35,9 +39,16 @@ class Beam:
     def filter(
         self, 
         num_beams: int
-    ) -> "Beam":
+    ) -> tuple["Beam", "Beam"]:
+        """
+        Filter beams into continuing and terminated groups based on EOS token.
+        """
         top_beam_indices = self.logprob_sums.topk(k=num_beams).indices.tolist()
-        top_logprob_sums = self.logprob_sums[top_beam_indices]
-        top_beams = self.tokens[top_beam_indices]
+        
+        new_tokens = self.tokens[:, -1]
+        terminated_indices = torch.nonzero(new_tokens == self.tokenizer.eos_token_id)
 
-        return Beam(self.model, self.tokenizer, top_logprob_sums, top_beams)
+        best_continuing = [i for i in top_beam_indices if i not in terminated_indices]
+        best_terminated = [i for i in top_beam_indices if i in terminated_indices]
+
+        return self[best_continuing], self[best_terminated]
