@@ -37,6 +37,9 @@ class Transformer_Sampler:
             new_token = torch.tensor([Transformer_Sampler.sample_next_token(logits, **kwargs)], dtype=torch.int64)
             input_toks = torch.cat([input_toks, new_token[None,]], dim=-1)
 
+            if new_token.item() == getattr(self.tokenizer, "eos_token_id", None):
+                break
+
         return self.tokenizer.decode(input_toks[0])
         
     @staticmethod
@@ -82,4 +85,4 @@ if __name__ == "__main__":
     transformer_sampler = Transformer_Sampler(model, tokenizer)
 
     prompt = "The dog"
-    print(transformer_sampler.sample(prompt, max_new_tokens=32, temperature=0.0))
+    print(transformer_sampler.sample(prompt, max_new_tokens=512, temperature=0.0))
