@@ -1,5 +1,6 @@
 import torch
 
+from tqdm import tqdm
 from beams import Beam
 from torch import Tensor
 from jaxtyping import Float, Int
@@ -34,7 +35,7 @@ class Transformer_Sampler:
         """
         input_toks = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
         
-        for _ in range(max_new_tokens):
+        for _ in tqdm(range(max_new_tokens)):
             output = self.model(input_toks)
             logits = output.logits[0, -1, :]
             new_token = torch.tensor([Transformer_Sampler.sample_next_token(logits, **kwargs)], 
@@ -83,14 +84,19 @@ class Transformer_Sampler:
         max_new_tokens: int, 
     ):
         input_toks = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
-
-        best_beams = Beam(self.model, self.tokenizer, torch.tensor([0.0, 0.0, 0.0]).to(self.device), input_toks)
-        
-        for _ in range(max_new_tokens):
+        best_beams = Beam(self.model, self.tokenizer, torch.tensor([0.0]).to(self.device), input_toks)
+        list_of_best_beams = []
+        for _ in tqdm(range(max_new_tokens)):
+            torch.cuda.empty_cache()
             best_beams = best_beams.generate(num_beams=num_beams)
-            print(best_beams.logprob_sums, best_beams.tokens)
-            best_beams = best_beams.filter(num_beams)
-            break
+            best_beams, best_beams_terminated = best_beams.filter(num_beams)
+            list_of_best_beams.extend(best_beams_terminated.get_logprobs_and_completions)
+            
+            if len(list_of_best_beams) >= num_return_sequences:
+                return list_of_best_beams[:num_return_sequences]
+            
+        list_of_best_beams.extend(best_beams.get_logprobs_and_completions)
+        return list_of_best_beams[:num_return_sequences]
         
 
     def __str__(self):
@@ -107,7 +113,13 @@ if __name__ == "__main__":
     
     transformer_sampler = Transformer_Sampler(model, tokenizer, device)
 
-    prompt = ["The dog", "The cat", "The mouse"]
-    # print(transformer_sampler.sample(prompt, max_new_tokens=32, temperature=0.0))
+    prompt = "The goal of life is to"
+    max_new_tokens, num_beams, num_return_sequences = 32, 32, 1
 
-    transformer_sampler.beam_search(prompt, 3, 2, 32)
+    
+    greedy_output = transformer_sampler.sample(prompt, max_new_tokens, temperature=0.0)
+
+    top_beam_str = transformer_sampler.beam_search(prompt, num_beams, num_return_sequences, max_new_tokens)[0][1]
+
+    print(f"Prompt: {prompt}\n\nGreedy output:\n {greedy_output}\n\nBeam search output:\n {top_beam_str}")
+
