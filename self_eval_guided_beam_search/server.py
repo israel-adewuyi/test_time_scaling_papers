@@ -11,7 +11,7 @@ from sglang.utils import wait_for_server, print_highlight, terminate_process
 class Server:
     def __init__(self, model_path: str, port: Optional[int] = 30000) -> None:
         self.server_process, self.port = launch_server_cmd(
-            f"python3 -m sglang.launch_server --model-path {model_path} --port {port} --host 0.0.0.0 --skip-tokenizer-init --log-level error --mem-fraction-static 0.4"
+            f"python3 -m sglang.launch_server --model-path {model_path} --port {port} --host 0.0.0.0 --tokenizer-path {model_path}  --log-level error --mem-fraction-static 0.4"
         )
         wait_for_server(f"http://localhost:{self.port}")
 
@@ -45,6 +45,7 @@ class Server:
                         "max_new_tokens": 32
                     },
                 "return_logprob":True,
+                "top_logprobs_num": 5,
             }
             return self._send_request(url, data).json()
         except Exception as e:
