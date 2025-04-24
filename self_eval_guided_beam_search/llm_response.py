@@ -1,4 +1,3 @@
-# import torch
 from typing import Dict, List
 from torch import Tensor
 
@@ -23,6 +22,8 @@ class Response:
     def logprobs_sum(self) -> Tensor:
         return self.response_logprob_sum
 
-    @property
-    def get_tokens(self) -> List:
-        return self.tokens
+    def get_tokens(self, only_response: bool) -> List:
+        if only_response: 
+            return self.response_tokens
+        else:
+            return self.tokens
