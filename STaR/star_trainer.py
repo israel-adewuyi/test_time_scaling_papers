@@ -33,10 +33,12 @@ class STaRTrainer:
     num_samples (int): The number of samples to generate for each digit in range(1, num_digits + 1)
     num_iterations (int): The max number of iterations to run the reasoner for
     accuracy_per_iter (bool): If to plot the accuracy_plot after every iteration
+    do_rationalization (bool): If to perform the rationalization step or not
 
     Attributes
     dataset: This is a generated dataset of M samples of i digit addition, for i = 1 to num_digits.
     correct_counts_per_iter: This counts the number of correct addition the model gets right, for each digit, for each iteration.
+    incorrect_outputs: This maintains the incorrect outputs from the filter function. Is emptied and renewed at each iteration.
     self.total_counts_per_iter: This counts the total number of addition (num_samples) the model does, for each digit, for each iteration.
     sampling_params: default sampling params to be used with VLLM 
     system_prompt: default system prompt to be used for each dataset
@@ -149,10 +151,8 @@ class STaRTrainer:
         
     def inference(self, texts: List[str], answers: List[str], digits: List[str], iter: int):
         prompts = [self.SYSTEM_PROMPT.format(question=text) for text in texts]
-        
         with torch.no_grad():
             outputs = self.llm.generate(prompts, self.sampling_params)
-        
         self.filter_outputs(prompts, outputs, answers, digits, iter)
             
     def filter_outputs(self, texts, outputs, answers, digits, iter):
@@ -227,10 +227,8 @@ class STaRTrainer:
 
     def finetune(self):
         combined_data = self.data[:]
-        print(f"Before combining, shape is {len(combined_data)}")
         if hasattr(self, "rationalized_data"):
             combined_data.extend(self.rationalized_data)
-        print(f"After combining, shape is {len(combined_data)}")
         
         if combined_data:
             dataframe = {"text": combined_data}
@@ -262,11 +260,9 @@ class STaRTrainer:
     def run(self):
         """
         This function contains the execution of the core logic itself.
-
-        For each iteration, we do 
+        For each iteration, we
         1. inference, which consists of generating the scratchpads and filtering them for correctness
         2. Finetuning on the filtered dataset of correct scratchpads. 
-
         Note that for every finetuning step, we use the original model (load from HF afresh) but do inference on the finetuned model
         """
         
@@ -311,7 +307,6 @@ class STaRTrainer:
                 self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
                 raise
         
-        # del self.llm
         gc.collect()
         torch.cuda.empty_cache()
         
