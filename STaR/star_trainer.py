@@ -270,52 +270,44 @@ class STaRTrainer:
         answers = self.dataset["answer"].tolist()
         digits = self.dataset['digit'].tolist()
         print(f"Initial dataset size: {len(texts)}")
-        
+
         for itr in range(self.num_iterations):
             print(f"Starting iteration {itr + 1}")
             
             gc.collect()
             torch.cuda.empty_cache()
-
+    
             try:
                 self.load_model()
                 self.inference(texts, answers, digits, itr)
-            except Exception as e:
-                print(f"Error during inference in iteration {itr + 1}: {str(e)}")
-                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
-                raise
-            
-            if self.accuracy_per_iter:
-                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{itr}.png")
-
-            if self.do_rationalization:
-                try:
-                    self.rationalized_data = self.rationalize()
-                except Exception as e:
-                    print(f"Error during rationalization in iteration {itr + 1}: {str(e)}")
-                    self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
-                    raise
-
-            del self.llm
-            gc.collect()
-            torch.cuda.empty_cache()
                 
-            try:
+                if self.accuracy_per_iter:
+                    self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{itr}.png")
+    
+                if self.do_rationalization:
+                    self.rationalized_data = self.rationalize()
+    
+                del self.llm
+                gc.collect()
+                torch.cuda.empty_cache()
+                    
                 self.finetune()
             except Exception as e:
-                print(f"Error during finetuning in iteration {itr + 1}: {str(e)}")
-                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
+                print(f"Error during iteration {itr + 1}: {str(e)}")
                 raise
         
         gc.collect()
         torch.cuda.empty_cache()
+        self.plot_accuracy(self.num_iterations - 1)
         
-        if not self.accuracy_per_iter:
-            self.plot_accuracy(self.num_iterations - 1)
-        
-    def plot_accuracy(self, iter: int, file_name='assets/accuracy_plot.png'):
+    def plot_accuracy(self, iter: int, file_name: str ='assets/accuracy_plot.png'):
         iterations = range(iter + 1)  
         accuracy = {i: [] for i in range(1, self.num_digits + 1)}
+
+        if self.do_rationalization:
+            title = f"Accuracy (Arithmetic tasl) {self.original_model_path.split('/')[-1]} with rationalization"
+        else:
+            title = f"Accuracy (Arithmetic tasl) {self.original_model_path.split('/')[-1]} without rationalization"
     
         for iter_idx in range(iter + 1):
             for digits in range(1, self.num_digits + 1):
@@ -333,7 +325,7 @@ class STaRTrainer:
     
         plt.xlabel("Iteration", fontsize=12)
         plt.ylabel("Accuracy (%)", fontsize=12)
-        plt.title(f"Accuracy per Digit Length for {self.original_model_path.split('/')[-1]}", fontsize=14)
+        plt.title(title, fontsize=14)
         plt.grid(True, linestyle="--", alpha=0.7) 
         plt.legend(fontsize=10)
         plt.tight_layout()
