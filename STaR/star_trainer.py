@@ -17,9 +17,8 @@ from trl import SFTConfig, SFTTrainer
 from arithmetic_dataset import generate_dataset
 
 # load_dotenv()
-print(os.environ.get('CUDA_VISIBLE_DEVICES'))  # Should output '1' [[1]][[2]][[3]]
+print(os.environ.get('CUDA_VISIBLE_DEVICES'))
 print(f"Num devices is {torch.cuda.device_count()}")
-# assert torch.cuda.device_count() == 10, torch.cuda.device_count()
 
 
 class STaRTrainer:
@@ -43,17 +42,27 @@ class STaRTrainer:
     system_prompt: default system prompt to be used for each dataset
     
     """
-    def __init__(self, model_path: str, num_digits: int, num_samples:int, num_iterations: int, accuracy_per_iter: bool):
+    def __init__(
+        self, 
+        model_path: str, 
+        num_digits: int, 
+        num_samples:int, 
+        num_iterations: int, 
+        accuracy_per_iter: bool,
+        do_rationalization: bool
+    ) -> None:
         self.original_model_path = model_path
         self.model_path = model_path
         self.num_digits = num_digits
         self.num_samples = num_samples
         self.num_iterations = num_iterations
         self.accuracy_per_iter = accuracy_per_iter
+        self.do_rationalization = do_rationalization
         self.dataset = generate_dataset(self.num_digits, self.num_samples)
         
         self.correct_counts_per_iter = {i: [] for i in range(1, self.num_digits + 1)}
         self.total_counts_per_iter = {i: [] for i in range(1, self.num_digits + 1)}
+        self.incorrect_outputs = []
         
         self.llm = None
         self.sampling_params = SamplingParams(
@@ -95,8 +104,28 @@ class STaRTrainer:
         
         \nUser: {question}\nAssistant:
         """
+        self.RATIONALIZATION_PROMPT = """
+        A conversation between User and Assistant. The User provides two numbers to add and the correct answer as a hint. The Assistant should provide a step-by-step addition process, enclosed in the <scratch> tag, that leads to the given answer. After the closing scratch tag, write the final answer on a newline and <QED> on another newline.
+        Example:
+        User:
+        Given the answer is 8 8 3, provide the step-by-step addition for 6 2 4 + 2 5 9:
+        Assistant:
+        <scratch>
+        6 2 4 + 2 5 9 , C: 0
+        2 + 5 , 3 C: 1
+        6 + 2 , 8 3 C: 0
+        , 8 8 3 C: 0
+        0 8 8 3
+        </scratch>
+        8 8 3
+        <QED>
+        
+        \nUser: Given the answer is {answer}, provide the step-by-step addition for {question}:\nAssistant:
+        """
+
 
     def load_model(self):
+        """Load the LLM from HF or local (e.g iteration >= 1)"""
         torch.cuda.empty_cache()
         print(f"{'-' * 20} Loading from {self.model_path}")
         self.llm = LLM(
@@ -128,6 +157,7 @@ class STaRTrainer:
             
     def filter_outputs(self, texts, outputs, answers, digits, iter):
         filtered_dataset = []
+        self.incorrect_outputs = []
         
         iter_correct = {i: 0 for i in range(1, self.num_digits + 1)}
         iter_total = {i: 0 for i in range(1, self.num_digits + 1)}
@@ -144,6 +174,13 @@ class STaRTrainer:
             if flag and digits_result == answer:
                 iter_correct[digit] += 1
                 filtered_dataset.append(question + generated_text[0])
+            else:
+                self.incorrect_outputs.append({
+                    "question": question,
+                    "answer": answer,
+                    "digit": digit
+                })
+
                 
         for d in range(1, self.num_digits + 1):
             self.correct_counts_per_iter[d].append(iter_correct[d])
@@ -152,7 +189,43 @@ class STaRTrainer:
         print(self.correct_counts_per_iter)
         print(self.total_counts_per_iter)
         print(f"Filtered dataset size: {len(filtered_dataset)}")
+        print(f"Incorrect outputs for rationalization: {len(self.incorrect_outputs)}")
         self.data = filtered_dataset
+
+    def rationalize(self):
+        """
+        Generates rationales for incorrect inference outputs by providing the correct answer as a hint.
+        Uses the rationalization prompt and processes incorrect outputs stored in self.incorrect_outputs.
+        """
+        print("I want to rationalize now, man")
+        if not self.incorrect_outputs:
+            print("No incorrect outputs to rationalize.")
+            return []
+
+        rationalized_data = []
+        prompts = [
+            self.RATIONALIZATION_PROMPT.format(
+                question=entry["question"],
+                answer=entry["answer"]
+            ) for entry in self.incorrect_outputs
+        ]
+
+        with torch.no_grad():
+            outputs = self.llm.generate(prompts, self.sampling_params)
+
+        for entry, output in zip(self.incorrect_outputs, outputs):
+            generated_text = [out.text for out in output.outputs]
+            assert len(generated_text) == 1, f"Length of rationalized text should be 1, instead, it is {len(generated_text)}"
+            
+            flag, digits_result = self.string_match(generated_text[0])
+            if flag and digits_result == entry["answer"]:
+                # Store the rationale without the hint (use original question prompt)
+                rationalized_data.append(entry["question"] + generated_text[0])
+        
+        print(f"Rationalized dataset size: {len(rationalized_data)}")
+        print(rationalized_data)
+        return rationalized_data
+
 
     def finetune(self):
         if self.data:
@@ -215,6 +288,14 @@ class STaRTrainer:
             if self.accuracy_per_iter:
                 self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{itr}.png")
 
+            if self.do_rationalization:
+                try:
+                    self.rationalized_data = self.rationalize()
+                except Exception as e:
+                    print(f"Error during rationalization in iteration {itr + 1}: {str(e)}")
+                    self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
+                    raise
+
             del self.llm
             gc.collect()
             torch.cuda.empty_cache()
@@ -226,7 +307,7 @@ class STaRTrainer:
                 self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
                 raise
         
-        del self.llm
+        # del self.llm
         gc.collect()
         torch.cuda.empty_cache()
         
@@ -272,9 +353,11 @@ def parse_args():
                         help="Number of training iterations")
     parser.add_argument("--accuracy_per_iter", type=bool, default=True, 
                        help="Plot the graph of accuracy for each iterations")
+    parser.add_argument("--do_rationalization", type=bool, default=False,
+                       )
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
-    trainer = STaRTrainer(args.model_path, args.num_digits, args.num_samples, args.num_iterations, args.accuracy_per_iter)
+    trainer = STaRTrainer(args.model_path, args.num_digits, args.num_samples, args.num_iterations, args.accuracy_per_iter, args.do_rationalization)
     trainer.run()
