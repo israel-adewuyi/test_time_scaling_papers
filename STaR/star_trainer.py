@@ -219,17 +219,21 @@ class STaRTrainer:
             
             flag, digits_result = self.string_match(generated_text[0])
             if flag and digits_result == entry["answer"]:
-                # Store the rationale without the hint (use original question prompt)
                 rationalized_data.append(entry["question"] + generated_text[0])
         
         print(f"Rationalized dataset size: {len(rationalized_data)}")
-        print(rationalized_data)
         return rationalized_data
 
 
     def finetune(self):
-        if self.data:
-            dataframe = {"text": self.data}
+        combined_data = self.data[:]
+        print(f"Before combining, shape is {len(combined_data)}")
+        if hasattr(self, "rationalized_data"):
+            combined_data.extend(self.rationalized_data)
+        print(f"After combining, shape is {len(combined_data)}")
+        
+        if combined_data:
+            dataframe = {"text": combined_data}
             dataset = Dataset.from_dict(dataframe)
             sfttraining_args = SFTConfig(
                 per_device_train_batch_size=8,
