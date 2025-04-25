@@ -1,5 +1,8 @@
-import re
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
+import re
 import gc
 import time
 import wandb
@@ -9,12 +12,15 @@ import matplotlib.pyplot as plt
 
 from typing import List
 from datasets import Dataset
-from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
 from trl import SFTConfig, SFTTrainer
 from arithmetic_dataset import generate_dataset
 
-load_dotenv()
+# load_dotenv()
+print(os.environ.get('CUDA_VISIBLE_DEVICES'))  # Should output '1' [[1]][[2]][[3]]
+print(f"Num devices is {torch.cuda.device_count()}")
+# assert torch.cuda.device_count() == 10, torch.cuda.device_count()
+
 
 class STaRTrainer:
     """
@@ -153,7 +159,7 @@ class STaRTrainer:
             dataframe = {"text": self.data}
             dataset = Dataset.from_dict(dataframe)
             sfttraining_args = SFTConfig(
-                per_device_train_batch_size=4,
+                per_device_train_batch_size=8,
                 gradient_accumulation_steps=4,
                 max_seq_length=1024,
                 output_dir="/tmp",
@@ -168,9 +174,12 @@ class STaRTrainer:
             trainer.train()
             output_path = f"fted_model_iter_{int(time.time())}"
             trainer.save_model(output_path)
+            
             del trainer
             gc.collect()
             wandb.finish()
+            torch.cuda.empty_cache()
+            
             self.model_path = output_path
 
     def run(self):
@@ -189,23 +198,33 @@ class STaRTrainer:
         digits = self.dataset['digit'].tolist()
         print(f"Initial dataset size: {len(texts)}")
         
-        for iter in range(self.num_iterations):
-            print(f"Starting iteration {iter + 1}")
+        for itr in range(self.num_iterations):
+            print(f"Starting iteration {itr + 1}")
             
             gc.collect()
             torch.cuda.empty_cache()
-            
-            self.load_model()
-            self.inference(texts, answers, digits, iter)
 
+            try:
+                self.load_model()
+                self.inference(texts, answers, digits, itr)
+            except Exception as e:
+                print(f"Error during inference in iteration {itr + 1}: {str(e)}")
+                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
+                raise
+            
             if self.accuracy_per_iter:
-                self.plot_accuracy(iter, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{iter}.png")
+                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{itr}.png")
 
             del self.llm
             gc.collect()
             torch.cuda.empty_cache()
                 
-            self.finetune()
+            try:
+                self.finetune()
+            except Exception as e:
+                print(f"Error during finetuning in iteration {itr + 1}: {str(e)}")
+                self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_error_{itr}.png")
+                raise
         
         del self.llm
         gc.collect()
