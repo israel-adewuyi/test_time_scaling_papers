@@ -9,7 +9,7 @@
 - To log the accuracy plots at each iteration, add the `--accuracy_per_iter` argument when running the star_trainer script
 - [Qwen/Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) was used for training.
 - Experiment was conducted on a single A100 80GB GPU.
-- Assistants were [Grok](https://grok.com) and [Qwen](https://chat.qwenai.com/)
+- Assistants were [Grok](https://grok.com) and [Qwen](https://chat.qwen.ai/)
 
 ## Results. 
 - STaR with rationalization
