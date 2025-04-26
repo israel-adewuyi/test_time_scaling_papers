@@ -16,11 +16,6 @@ from vllm import LLM, SamplingParams
 from trl import SFTConfig, SFTTrainer
 from arithmetic_dataset import generate_dataset
 
-# load_dotenv()
-print(os.environ.get('CUDA_VISIBLE_DEVICES'))
-print(f"Num devices is {torch.cuda.device_count()}")
-
-
 class STaRTrainer:
     """
     An instantiation of a STaR (Self-Taught Reasoner) trainer for the symbolic reasoning task.
@@ -156,6 +151,8 @@ class STaRTrainer:
         self.filter_outputs(prompts, outputs, answers, digits, iter)
             
     def filter_outputs(self, texts, outputs, answers, digits, iter):
+        """Filters the model's generated outputs to separate correct and incorrect responses.
+           Updates accuracy tracking metrics and prepares data for fine-tuning or rationalization. """
         filtered_dataset = []
         self.incorrect_outputs = []
         
@@ -226,6 +223,7 @@ class STaRTrainer:
 
 
     def finetune(self):
+        """Performs fine-tuning on the model using correct and rationalized outputs."""
         combined_data = self.data[:]
         if hasattr(self, "rationalized_data"):
             combined_data.extend(self.rationalized_data)
@@ -254,7 +252,9 @@ class STaRTrainer:
             gc.collect()
             wandb.finish()
             torch.cuda.empty_cache()
-            
+
+            if self.do_rationalization:
+                del self.rationalized_data
             self.model_path = output_path
 
     def run(self):
@@ -282,7 +282,7 @@ class STaRTrainer:
                 self.inference(texts, answers, digits, itr)
                 
                 if self.accuracy_per_iter:
-                    self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_plot_{itr}.png")
+                    self.plot_accuracy(itr, f"assets/{self.original_model_path.split('/')[-1]}_accuracy_{itr}_")
     
                 if self.do_rationalization:
                     self.rationalized_data = self.rationalize()
@@ -300,14 +300,16 @@ class STaRTrainer:
         torch.cuda.empty_cache()
         self.plot_accuracy(self.num_iterations - 1)
         
-    def plot_accuracy(self, iter: int, file_name: str ='assets/accuracy_plot.png'):
+    def plot_accuracy(self, iter: int, file_name: str ='assets/accuracy_plot_'):
         iterations = range(iter + 1)  
         accuracy = {i: [] for i in range(1, self.num_digits + 1)}
 
         if self.do_rationalization:
             title = f"Accuracy (Arithmetic tasl) {self.original_model_path.split('/')[-1]} with rationalization"
+            file_name += "with_rationalization.png"
         else:
             title = f"Accuracy (Arithmetic tasl) {self.original_model_path.split('/')[-1]} without rationalization"
+            file_name += "without_rationalization.png"
     
         for iter_idx in range(iter + 1):
             for digits in range(1, self.num_digits + 1):
@@ -342,7 +344,7 @@ def parse_args():
                        help="Number of samples to generate in the dataset for each digit addition")
     parser.add_argument("--num_iterations", type=int, default=20,
                         help="Number of training iterations")
-    parser.add_argument("--accuracy_per_iter", type=bool, default=True, 
+    parser.add_argument("--accuracy_per_iter", type=bool, default=False, 
                        help="Plot the graph of accuracy for each iterations")
     parser.add_argument("--do_rationalization", type=bool, default=False,
                        )
