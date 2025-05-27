@@ -15,14 +15,14 @@ from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
 
 @dataclass
 class ToTArgs:
-    generations_per_step: int = 8
+    generations_per_step: int = 4
     total_steps: int = 2
     data_dir: str = "data/game_of_24.csv"
     model_name: str = "Qwen/Qwen2.5-32B"
 
 
     # BFS-specific arg
-    breadth_limit: int = 5
+    breadth_limit: int = 2
 
 class PuzzleStep(BaseModel):
     operation: str
@@ -57,6 +57,7 @@ class TreeOfThoughtBFS(TreeOfThought):
         print(payload)
 
         response = self._deliver_payload(payload)
+        # print(response.json()["text"])
         next_state_data = json.loads(response.json()["text"])
         operations, numbers_left = [], []
 
@@ -93,23 +94,30 @@ class TreeOfThoughtBFS(TreeOfThought):
     def run_pipeline(self):
         for _, row in self.data_df.iterrows():
             pid, puzzle = row["Rank"], row["Puzzle"]
+            
             # Dict to track states, across timesteps for the current prompt
             states_tracker = defaultdict(dict)
+
+            # the current puzzle is the initial state s_0
             initial_prompt = PROPOSE_PROMPT_24.format(k=self.generations_per_step, input_numbers=puzzle)
             states_tracker[0] = [initial_prompt]
 
             for step in range(self.total_steps):
                 cur_states = states_tracker[step]
                 total_operations_performed, total_temp_next_states = [], []
-                
+
+                # we run generation for all the current states s in the set of states filtered from the generations at previous iteration
+                # From the paper: S′t ← {[s, z] | s ∈ St−1, zt ∈ G(pθ , s, k)}
                 for state in cur_states:
                     operations, temp_next_states = self.generator(state)
                     total_operations_performed.extend(operations)
                     total_temp_next_states.extend(temp_next_states)
                     # next_states = self.evaluator(temp_next_states_data)
                 # print(f"Total temp next states \n: {total_temp_next_states}")
+                # Vt ← V (pθ , S′ t)
                 total_values = self.evaluator(total_temp_next_states)
 
+                # St ← arg maxS⊂ S′t,|S|=b P s∈S Vt(s)
                 operations_performed, next_states, state_values = self._select_next_states(
                     total_operations_performed, total_temp_next_states, total_values)
 
@@ -121,6 +129,7 @@ class TreeOfThoughtBFS(TreeOfThought):
                 states_tracker[step + 1] = next_states_prompt
             
             # print(pid, puzzle)
+            break
 
 
 
