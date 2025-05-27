@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 
+from tqdm import tqdm
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from collections import defaultdict
@@ -16,23 +17,13 @@ from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
 @dataclass
 class ToTArgs:
     generations_per_step: int = 4
-    total_steps: int = 2
+    total_steps: int = 3
     data_dir: str = "data/game_of_24.csv"
     model_name: str = "Qwen/Qwen2.5-32B"
 
 
     # BFS-specific arg
     breadth_limit: int = 2
-
-class PuzzleStep(BaseModel):
-    operation: str
-    numbers_left: str
-
-class PuzzleHistorySchema(BaseModel):
-    step: str
-    operation: str
-    numbers_left: List[int]
-    
 
 class TreeOfThought(ABC):
     def __init__(self, args: ToTArgs):
@@ -54,10 +45,8 @@ class TreeOfThoughtBFS(TreeOfThought):
         
     def generator(self, state: str):
         payload = self._prepare_payload(state)
-        print(payload)
 
         response = self._deliver_payload(payload)
-        # print(response.json()["text"])
         next_state_data = json.loads(response.json()["text"])
         operations, numbers_left = [], []
 
@@ -72,7 +61,7 @@ class TreeOfThoughtBFS(TreeOfThought):
     def evaluator(self, temp_next_states: List):
         next_state_values = []
         
-        for next_state in temp_next_states:
+        for next_state in tqdm(temp_next_states):
             value_prompt = VALUE_PROMPT_24.format(input_numbers=next_state)
             value_payload = self._prepare_payload(value_prompt)
             scores = []
@@ -108,12 +97,11 @@ class TreeOfThoughtBFS(TreeOfThought):
 
                 # we run generation for all the current states s in the set of states filtered from the generations at previous iteration
                 # From the paper: S′t ← {[s, z] | s ∈ St−1, zt ∈ G(pθ , s, k)}
-                for state in cur_states:
+                for state in tqdm(cur_states):
                     operations, temp_next_states = self.generator(state)
                     total_operations_performed.extend(operations)
                     total_temp_next_states.extend(temp_next_states)
-                    # next_states = self.evaluator(temp_next_states_data)
-                # print(f"Total temp next states \n: {total_temp_next_states}")
+                    
                 # Vt ← V (pθ , S′ t)
                 total_values = self.evaluator(total_temp_next_states)
 
@@ -127,8 +115,7 @@ class TreeOfThoughtBFS(TreeOfThought):
                     
                 # upload content (change this? )
                 states_tracker[step + 1] = next_states_prompt
-            
-            # print(pid, puzzle)
+                
             break
 
 
