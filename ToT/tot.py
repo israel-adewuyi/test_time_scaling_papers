@@ -53,21 +53,25 @@ class TreeOfThoughtBFS(TreeOfThought):
         self.generate_url = "http://localhost:30000/generate"
         self.flush_url = "http://localhost:30000/flush_cache"
         
-    def generator(self, state: str):
+    def generator(self, state: str) -> Tuple[List[str], :
         payload = self._prepare_payload(state)
 
-        response = self._deliver_payload(payload=payload)
-        print(response.json()["text"])
-        next_state_data = json.loads(response.json()["text"])
-        operations, numbers_left = [], []
-
-        for key, value in next_state_data.items():
-            op, num_left = value["operation"], value["numbers_left"]
-            num_left = " ".join(map(str, num_left))
-            operations.append(op)
-            numbers_left.append(num_left)
-            
-        return operations, numbers_left
+        try:
+            response = self._deliver_payload(payload=payload)
+            next_state_data = json.loads(response.json()["text"])
+            operations, numbers_left = [], []
+    
+            for key, value in next_state_data.items():
+                op, num_left = value["operation"], value["numbers_left"]
+                num_left = " ".join(map(str, num_left))
+                operations.append(op)
+                numbers_left.append(num_left)
+                
+            return operations, numbers_left
+        except:
+            except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing generator output: {e}")
+            return [], [] 
    
     def evaluator(self, temp_next_states: List):
         next_state_values = []
@@ -78,10 +82,14 @@ class TreeOfThoughtBFS(TreeOfThought):
             scores = []
 
             for _ in range(self.num_eval_attempts):
-                response = self._deliver_payload(payload=value_payload)
-                value = response.json()["text"].split("Answer")[-1]
-                score = 2 if "sure" in value else (1 if "likely" in value else 0)
-                scores.append(score)
+                try:
+                    response = self._deliver_payload(payload=payload)
+                    value = response.json().get("text", "").split("Answer:")[-1].strip().lower()
+                    score = 2 if "sure" in value else (1 if "likely" in value else 0)
+                    scores.append(score)
+                except Exception as e:
+                    print(f"Error evaluating state {state.numbers}: {e}")
+                    scores.append(0) 
 
             mean_value = np.array(scores).mean()
             next_state_values.append(float(mean_value))
