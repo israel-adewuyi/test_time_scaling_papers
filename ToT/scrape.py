@@ -7,9 +7,10 @@ from typing import Optional, List
 
 
 class GameOf24Scrapper:
-    def __init__(self, output_dir: str = "data", sample: bool = True):
+    def __init__(self, output_dir: str = "data", hard_sample: bool = True, easy_sample: bool = False):
         self.base_url = "https://www.4nums.com/game/difficulties/"
-        self.sample = sample
+        self.hard_sample = hard_sample
+        self.easy_sample = easy_sample
         self.output_dir = output_dir
         self.scraper = cloudscraper.create_scraper()  # Use cloudscraper to bypass Cloudflare
         self.headers = {
@@ -49,14 +50,18 @@ class GameOf24Scrapper:
         extracted_info = extracted_info[1:]
 
         # extract sample
-        if self.sample:
+        if self.hard_sample:
             extracted_info = [row for row in extracted_info if int(row[0]) > 900 and int(row[0]) <= 1000]
+        elif self.easy_sample:
+            extracted_info = [row for row in extracted_info if int(row[0]) > 0 and int(row[0]) <= 50]
+            
             
         self.save_to_csv(extracted_info)
         # print(extracted_info)
 
     def save_to_csv(self, data: List[tuple]):
-        output_path = os.path.join(self.output_dir, "game_of_24.csv")
+        file_name = f"game_of_24{"_easy" if self.easy_sample else ("_hard" if self.hard_sample else "")}.csv"
+        output_path = os.path.join(self.output_dir, file_name)
         with open(output_path, mode='w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(["Rank", "Puzzle"])
@@ -65,7 +70,7 @@ class GameOf24Scrapper:
         
 
 def main():
-    scraper = GameOf24Scrapper()
+    scraper = GameOf24Scrapper(hard_sample=False, easy_sample=True)
     scraper.scrape()
 
 
