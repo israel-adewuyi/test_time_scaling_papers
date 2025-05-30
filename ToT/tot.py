@@ -20,6 +20,11 @@ class ToTArgs:
     total_steps: int = 3
     data_dir: str = "data/game_of_24.csv"
     model_name: str = "Qwen/Qwen2.5-32B"
+    num_eval_attempts: int = 3
+
+    # sglang-rollout specific args
+    temperature: float = 0.5
+    max_new_tokens: int = 2048
 
     # BFS-specific arg
     breadth_limit: int = 2
@@ -39,6 +44,9 @@ class TreeOfThoughtBFS(TreeOfThought):
         self.total_steps = args.total_steps
         self.breadth_limit = args.breadth_limit
         self.model_name = args.model_name
+        self.temperature = args.temperature
+        self.max_new_tokens = args.max_new_tokens
+        self.num_eval_attempts = args.num_eval_attempts
         self.data_df = pd.read_csv(args.data_dir)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
@@ -69,7 +77,7 @@ class TreeOfThoughtBFS(TreeOfThought):
             value_payload = self._prepare_payload(value_prompt)
             scores = []
 
-            for _ in range(3):
+            for _ in range(self.num_eval_attempts):
                 response = self._deliver_payload(payload=value_payload)
                 value = response.json()["text"].split("Answer")[-1]
                 score = 2 if "sure" in value else (1 if "likely" in value else 0)
@@ -143,8 +151,8 @@ class TreeOfThoughtBFS(TreeOfThought):
         payload = {
             "text": payload,
             "sampling_params": {
-                "temperature": 0.5,
-                "max_new_tokens": 1024,
+                "temperature": self.temperature,
+                "max_new_tokens": self.max_new_tokens,
             },
         }
         
