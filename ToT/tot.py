@@ -134,38 +134,40 @@ class TreeOfThoughtBFS(TreeOfThought):
 
 
 
-    def _prepare_payload(self, prompt: str):
-        messages = [
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ]
+    def _prepare_payload(self, prompt: str) -> dict:
+        """Prepare payload for API request"""
+        
+        messages = [{"role": "user", "content": prompt}]
         text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        return text
-
-
-    def _deliver_payload(self, payload: Optional[str] = None):
-        payload = {
-            "text": payload,
+        return {
+            "text": text,
             "sampling_params": {
                 "temperature": self.temperature,
                 "max_new_tokens": self.max_new_tokens,
             },
         }
+
+
+    def _deliver_payload(self, payload: dict) -> requests.Response:
+        try:
+            return self._send_request(url=self.generate_url, payload=payload)
+        except Exception as e:
+            print(f"Error sending request: {e}")
+            raise
         
         return self._send_request(url=self.generate_url, payload=payload)
 
 
-    def _send_request(self, url, payload: Optional[dict] = None):
-        """Method to send info the requests to the server"""
+    def _send_request(self, url: str, payload: Optional[dict] = None) -> requests.Response:
+        """Send requests to the server"""
         try:
             response = requests.post(url, json=payload)
+            response.raise_for_status()
             return response
         except Exception as e:
-            print("An error occured")
+            print(f"An error {e} occured while sending request")
             raise
 
     def _select_next_states(
