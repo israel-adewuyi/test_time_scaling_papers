@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from pydantic import BaseModel, RootModel
 from transformers import AutoTokenizer
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
@@ -20,7 +20,6 @@ class ToTArgs:
     total_steps: int = 3
     data_dir: str = "data/game_of_24.csv"
     model_name: str = "Qwen/Qwen2.5-32B"
-
 
     # BFS-specific arg
     breadth_limit: int = 2
@@ -42,11 +41,15 @@ class TreeOfThoughtBFS(TreeOfThought):
         self.model_name = args.model_name
         self.data_df = pd.read_csv(args.data_dir)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+
+        self.generate_url = "http://localhost:30000/generate"
+        self.flush_url = "http://localhost:30000/flush_cache"
         
     def generator(self, state: str):
         payload = self._prepare_payload(state)
 
-        response = self._deliver_payload(payload)
+        response = self._deliver_payload(payload=payload)
+        print(response.json()["text"])
         next_state_data = json.loads(response.json()["text"])
         operations, numbers_left = [], []
 
@@ -67,7 +70,7 @@ class TreeOfThoughtBFS(TreeOfThought):
             scores = []
 
             for _ in range(3):
-                response = self._deliver_payload(value_payload)
+                response = self._deliver_payload(payload=value_payload)
                 value = response.json()["text"].split("Answer")[-1]
                 score = 2 if "sure" in value else (1 if "likely" in value else 0)
                 scores.append(score)
@@ -133,18 +136,28 @@ class TreeOfThoughtBFS(TreeOfThought):
         return text
 
 
-    def _deliver_payload(self, payload: str):
-        response = requests.post(
-            f"http://localhost:30000/generate",
-            json={
-                "text": payload,
-                "sampling_params": {
-                    "temperature": 0,
-                    "max_new_tokens": 1024,
-                },
+    def _deliver_payload(self, payload: Optional[str] = None):
+        self._send_request(url=self.flush_url, payload=None)
+        
+        payload = {
+            "text": payload,
+            "sampling_params": {
+                "temperature": 0.5,
+                "max_new_tokens": 1024,
             },
-        )
-        return response
+        }
+
+        return self._send_request(url=self.generate_url, payload=payload)
+
+
+    def _send_request(self, url, payload: Optional[dict] = None):
+        """Method to send info the requests to the server"""
+        try:
+            response = requests.post(url, json=payload)
+            return response
+        except Exception as e:
+            print("An error occured")
+            raise
 
     def _select_next_states(
         self,
