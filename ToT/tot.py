@@ -86,6 +86,9 @@ class TreeOfThoughtBFS(TreeOfThought):
     def run_pipeline(self):
         for _, row in self.data_df.iterrows():
             pid, puzzle = row["Rank"], row["Puzzle"]
+
+            # Flush cache before processing a new puzzle
+            self._send_request(url=self.flush_url, payload=None)
             
             # Dict to track states, across timesteps for the current prompt
             states_tracker = defaultdict(dict)
@@ -137,8 +140,6 @@ class TreeOfThoughtBFS(TreeOfThought):
 
 
     def _deliver_payload(self, payload: Optional[str] = None):
-        self._send_request(url=self.flush_url, payload=None)
-        
         payload = {
             "text": payload,
             "sampling_params": {
@@ -146,7 +147,7 @@ class TreeOfThoughtBFS(TreeOfThought):
                 "max_new_tokens": 1024,
             },
         }
-
+        
         return self._send_request(url=self.generate_url, payload=payload)
 
 
