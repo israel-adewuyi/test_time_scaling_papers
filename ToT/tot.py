@@ -177,9 +177,10 @@ class TreeOfThoughtBFS(TreeOfThought):
         print(f"Next state values are {next_state_values}")
         return next_state_values
             
-
-    # should rename this
     def run_tot(self):
+        """
+        Main pipeline to solve all puzzles in dataset using ToT approach
+        """
         answer_found, idx = 0, 0
         for _, row in tqdm(self.data_df.iterrows(), desc=f"Processing {idx + 1} of 50 "):
             pid, puzzle = row["Rank"], row["Puzzle"]
@@ -300,7 +301,18 @@ class TreeOfThoughtBFS(TreeOfThought):
         total_operations_performed: list, 
         total_temp_next_states: list, 
         total_values: list
-    ):
+    )-> Tuple[List[str], List[State], List[float]]:
+        """
+        Select top states based on evaluation scores
+        
+        Args:
+            total_operations_performed: All generated operations
+            total_temp_next_states: All generated states
+            total_values: Evaluation scores for each state
+            
+        Returns:
+            Tuple of (top operations, top states, top values) limited by breadth
+        """
         combined_data = list(zip(
             total_operations_performed,
             total_temp_next_states,
