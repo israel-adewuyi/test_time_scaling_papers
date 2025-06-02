@@ -1,3 +1,5 @@
+import os
+import csv
 import json
 import requests
 import pandas as pd
@@ -9,25 +11,39 @@ from dataclasses import dataclass
 from collections import defaultdict
 from pydantic import BaseModel, RootModel
 from transformers import AutoTokenizer
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
 
 @dataclass
 class ToTArgs:
-    generations_per_step: int = 4
+    generations_per_step: int = 8
     total_steps: int = 3
-    data_dir: str = "data/game_of_24.csv"
+    data_dir: str = "data/game_of_24_easy.csv"
     model_name: str = "Qwen/Qwen2.5-32B"
     num_eval_attempts: int = 3
+    max_gen_attempts: int = 10
+    cache_file: str = "results_cache.json"
 
     # sglang-rollout specific args
     temperature: float = 0.5
     max_new_tokens: int = 2048
 
     # BFS-specific arg
-    breadth_limit: int = 2
+    breadth_limit: int = 1
+
+
+@dataclass
+class State:
+    numbers: List[int]
+    operation_history: List[str]
+    parent: Optional['State'] = None
+
+    def to_prompt_string(self) -> str:
+        """Convert numbers to a space-separated string for prompt generation."""
+        return " ".join(map(str, self.numbers))
+
 
 class TreeOfThought(ABC):
     def __init__(self, args: ToTArgs):
@@ -47,38 +63,67 @@ class TreeOfThoughtBFS(TreeOfThought):
         self.temperature = args.temperature
         self.max_new_tokens = args.max_new_tokens
         self.num_eval_attempts = args.num_eval_attempts
+        self.max_gen_attempts = args.max_gen_attempts
         self.data_df = pd.read_csv(args.data_dir)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.cache_file = args.cache_file
 
         self.generate_url = "http://localhost:30000/generate"
         self.flush_url = "http://localhost:30000/flush_cache"
-        
-    def generator(self, state: str) -> Tuple[List[str], :
-        payload = self._prepare_payload(state)
 
-        try:
-            response = self._deliver_payload(payload=payload)
-            next_state_data = json.loads(response.json()["text"])
-            operations, numbers_left = [], []
+        # Initialize cache
+        self.cache = self._load_cache()
+
+
+    def _load_cache(self) -> dict:
+        """Load cache from file if it exists, otherwise return empty dict"""
+        if os.path.exists(self.cache_file):
+            with open(self.cache_file, 'r') as f:
+                return json.load(f)
+        return {}
+
+    def _save_cache(self):
+        """Save current cache to file"""
+        with open(self.cache_file, 'w') as f:
+            json.dump(self.cache, f)
+        
+    def generator(self, state: State) -> Tuple[List[str], List[State]]:
+        prompt = PROPOSE_PROMPT_24.format(k=self.generations_per_step, input_numbers=state.to_prompt_string())
+        payload = self._prepare_payload(prompt)
+
+        for attempt in range(self.max_gen_attempts):  
+            try:
+                response = self._deliver_payload(payload=payload)
+                next_state_data = json.loads(response.json()["text"])
+                operations, next_states = [], []
     
-            for key, value in next_state_data.items():
-                op, num_left = value["operation"], value["numbers_left"]
-                num_left = " ".join(map(str, num_left))
-                operations.append(op)
-                numbers_left.append(num_left)
-                
-            return operations, numbers_left
-        except:
-            except (json.JSONDecodeError, ValueError) as e:
-            print(f"Error parsing generator output: {e}")
-            return [], [] 
+                for key, value in next_state_data.items():
+                    op, num_left = value["operation"], value["numbers_left"]
+                    assert len(num_left) == len(state.numbers) - 1, f"There should be {len(state.numbers) - 1} numbers left"
+    
+                    new_state = State(
+                        numbers=[int(n) for n in num_left], 
+                        operation_history=state.operation_history + [op],
+                        parent=state
+                    )
+                    operations.append(op)
+                    next_states.append(new_state)
+    
+                return operations, next_states
+    
+            except Exception as e:
+                if attempt < self.max_gen_attempts - 1:
+                    print(f"Generator attempt {attempt+1} failed: {e}. Retrying...")
+                else:
+                    print(f"Generator failed after {self.max_gen_attempts} attempts: {e}")
+                    return [], [] 
    
     def evaluator(self, temp_next_states: List):
         next_state_values = []
-        
-        for next_state in tqdm(temp_next_states):
-            value_prompt = VALUE_PROMPT_24.format(input_numbers=next_state)
-            value_payload = self._prepare_payload(value_prompt)
+        print("Evaluating states")
+        for state in temp_next_states:
+            prompt = VALUE_PROMPT_24.format(input_numbers=state.to_prompt_string())
+            payload = self._prepare_payload(prompt)
             scores = []
 
             for _ in range(self.num_eval_attempts):
@@ -100,18 +145,32 @@ class TreeOfThoughtBFS(TreeOfThought):
 
     # should rename this
     def run_pipeline(self):
-        for _, row in self.data_df.iterrows():
+        answer_found, idx = 0, 0
+        for _, row in tqdm(self.data_df.iterrows(), desc=f"Processing {idx + 1} of 50 "):
             pid, puzzle = row["Rank"], row["Puzzle"]
+
+            # Check if puzzle is in cache
+            if puzzle in self.cache:
+                print(f"Puzzle {pid} found in cache, skipping...")
+                if self.cache[puzzle]:
+                    answer_found += 1
+                idx += 1
+                continue
+
+            print(puzzle)
 
             # Flush cache before processing a new puzzle
             self._send_request(url=self.flush_url, payload=None)
             
             # Dict to track states, across timesteps for the current prompt
             states_tracker = defaultdict(dict)
+            solution_found = False
+            solution_tracker = []
 
             # the current puzzle is the initial state s_0
-            initial_prompt = PROPOSE_PROMPT_24.format(k=self.generations_per_step, input_numbers=puzzle)
-            states_tracker[0] = [initial_prompt]
+            initial_numbers = [int(n) for n in puzzle.split()]
+            initial_state = State(numbers=initial_numbers, operation_history=[])
+            states_tracker[0] = [initial_state]
 
             for step in range(self.total_steps):
                 cur_states = states_tracker[step]
@@ -119,7 +178,8 @@ class TreeOfThoughtBFS(TreeOfThought):
 
                 # we run generation for all the current states s in the set of states filtered from the generations at previous iteration
                 # From the paper: S′t ← {[s, z] | s ∈ St−1, zt ∈ G(pθ , s, k)}
-                for state in tqdm(cur_states):
+                for state in tqdm(cur_states, desc=f"Step {step + 1}"):
+                    # print(state)
                     operations, temp_next_states = self.generator(state)
                     total_operations_performed.extend(operations)
                     total_temp_next_states.extend(temp_next_states)
@@ -127,18 +187,40 @@ class TreeOfThoughtBFS(TreeOfThought):
                 # Vt ← V (pθ , S′ t)
                 total_values = self.evaluator(total_temp_next_states)
 
+                # Select top states
                 # St ← arg maxS⊂ S′t,|S|=b P s∈S Vt(s)
-                operations_performed, next_states, state_values = self._select_next_states(
-                    total_operations_performed, total_temp_next_states, total_values)
+                operations, next_states, state_values = self._select_next_states(
+                    total_operations_performed, total_temp_next_states, total_values
+                )
 
-                print(f"Next state \n {next_states}, Next values \n {state_values}")
+                print(f"Selected states: {[s.numbers for s in next_states]}")
+                print(f"State values: {state_values}")
 
-                next_states_prompt = [PROPOSE_PROMPT_24.format(k=self.generations_per_step, input_numbers=next_state) for next_state in next_states]
-                    
-                # upload content (change this? )
-                states_tracker[step + 1] = next_states_prompt
+                # Store next states for the next step
+                states_tracker[step + 1] = next_states
+
+            # Check for solutions
+            for state in states_tracker[self.total_steps]:
+                if len(state.numbers) == 1 and state.numbers[0] == 24:
+                    answer_found += 1
+                    solution_found = True
+                    solution_tracker.append(state)
+                    print(f"Solution found: {state.operation_history}")
+                    break
+
+            # Update cache
+            self.cache[puzzle] = solution_found
+            self._save_cache()
                 
-            break
+            idx += 1
+
+        print(f"{answer_found} / {len(self.data_df)} answers were found")
+
+        accuracy = (answer_found / len(self.data_df)) * 100
+
+        with open("results_easy.csv", mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([f"b={self.breadth_limit}", accuracy])
 
 
 
