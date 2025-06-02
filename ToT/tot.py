@@ -18,24 +18,30 @@ from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
 
 @dataclass
 class ToTArgs:
-    generations_per_step: int = 8
-    total_steps: int = 3
-    data_dir: str = "data/game_of_24_easy.csv"
-    model_name: str = "Qwen/Qwen2.5-32B"
-    num_eval_attempts: int = 3
-    max_gen_attempts: int = 10
-    cache_file: str = "results_cache.json"
+    generations_per_step: int = 8 # Number of thoughts to generate per step
+    total_steps: int = 3 # Max tree dedpth
+    data_dir: str = "data/game_of_24_easy.csv" # Path to game of 24 dataset
+    model_name: str = "Qwen/Qwen2.5-32B" # LLM to use for gen and eval
+    num_eval_attempts: int = 3 # Number of evaluation attempts per state
+    max_gen_attempts: int = 10 # Max attempts for generation if API fails
+    cache_file: str = "results_cache.json" # File to cache results
 
     # sglang-rollout specific args
-    temperature: float = 0.5
-    max_new_tokens: int = 2048
+    temperature: float = 0.5  # Temperature for sampling
+    max_new_tokens: int = 2048 # Max number of tokens to generate
 
     # BFS-specific arg
-    breadth_limit: int = 1
+    breadth_limit: int = 1 # Number of top states to keep at each step
 
 
 @dataclass
 class State:
+    """
+    Represents a state in the search tree containing:
+    - numbers: Current numbers remaining
+    - operation_history: Sequence of operations taken to reach this state
+    - parent: Reference to parent state
+    """
     numbers: List[int]
     operation_history: List[str]
     parent: Optional['State'] = None
@@ -46,16 +52,22 @@ class State:
 
 
 class TreeOfThought(ABC):
+    """Abstract base class for ToT implementations"""
     def __init__(self, args: ToTArgs):
         pass
     def generator(self): 
+        """Generate potential next states from current state"""
         pass
     def evaluator(self):
+        """Evaluate quality of generated states"""
         pass
 
 
 class TreeOfThoughtBFS(TreeOfThought):
+    """Concrete implementation of Tree of Thought using Breadth-First Search strategy"""
+    
     def __init__(self, args: ToTArgs):
+        """Initialize BFS-based Tree of Thought solver with configuration"""
         self.generations_per_step = args.generations_per_step
         self.total_steps = args.total_steps
         self.breadth_limit = args.breadth_limit
@@ -68,6 +80,7 @@ class TreeOfThoughtBFS(TreeOfThought):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.cache_file = args.cache_file
 
+        # SGLANG API endpoints
         self.generate_url = "http://localhost:30000/generate"
         self.flush_url = "http://localhost:30000/flush_cache"
 
@@ -82,12 +95,24 @@ class TreeOfThoughtBFS(TreeOfThought):
                 return json.load(f)
         return {}
 
-    def _save_cache(self):
+    def _save_cache(self) -> None:
         """Save current cache to file"""
         with open(self.cache_file, 'w') as f:
             json.dump(self.cache, f)
         
     def generator(self, state: State) -> Tuple[List[str], List[State]]:
+        """
+        Generate possible next steps from current state using LLM
+        
+        Args:
+            state: Current state in the search tree
+            
+        Returns:
+            Tuple of (operations, next_states) where:
+            - operations: List of operation represented as strings
+            - next_states: List of resulting State objects
+        """
+        
         prompt = PROPOSE_PROMPT_24.format(k=self.generations_per_step, input_numbers=state.to_prompt_string())
         payload = self._prepare_payload(prompt)
 
@@ -118,7 +143,17 @@ class TreeOfThoughtBFS(TreeOfThought):
                     print(f"Generator failed after {self.max_gen_attempts} attempts: {e}")
                     return [], [] 
    
-    def evaluator(self, temp_next_states: List):
+    def evaluator(self, temp_next_states: List) -> List[float]:
+        """
+        Evaluate the quality of generated states using LLM
+        Map sure/likely/impossible to 2/1/0 and take the average over num_eval_attempts attempts
+        
+        Args:
+            temp_next_states: List of states to evaluate
+            
+        Returns:
+            List of average evaluation score for each state
+        """
         next_state_values = []
         print("Evaluating states")
         for state in temp_next_states:
@@ -144,7 +179,7 @@ class TreeOfThoughtBFS(TreeOfThought):
             
 
     # should rename this
-    def run_pipeline(self):
+    def run_tot(self):
         answer_found, idx = 0, 0
         for _, row in tqdm(self.data_df.iterrows(), desc=f"Processing {idx + 1} of 50 "):
             pid, puzzle = row["Rank"], row["Puzzle"]
@@ -284,5 +319,5 @@ class TreeOfThoughtBFS(TreeOfThought):
 if __name__ == "__main__":
     arg = ToTArgs()
     tot = TreeOfThoughtBFS(arg)
-    tot.run_pipeline()
+    tot.run_tot()
     
