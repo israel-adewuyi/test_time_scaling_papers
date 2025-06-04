@@ -24,14 +24,14 @@ class ToTArgs:
     model_name: str = "Qwen/Qwen2.5-32B" # LLM to use for gen and eval
     num_eval_attempts: int = 3 # Number of evaluation attempts per state
     max_gen_attempts: int = 10 # Max attempts for generation if API fails
-    cache_file: str = "results_cache.json" # File to cache results
+    cache_file: str = "b=5.json" # File to cache results
 
     # sglang-rollout specific args
     temperature: float = 0.5  # Temperature for sampling
     max_new_tokens: int = 2048 # Max number of tokens to generate
 
     # BFS-specific arg
-    breadth_limit: int = 1 # Number of top states to keep at each step
+    breadth_limit: int = 5 # Number of top states to keep at each step
 
 
 @dataclass
@@ -87,6 +87,22 @@ class TreeOfThoughtBFS(TreeOfThought):
         # Initialize cache
         self.cache = self._load_cache()
 
+        # track results
+        self.results_file = "results_bfs.csv"
+        self._initialize_results_csv()
+
+    def _initialize_results_csv(self) -> None:
+        """Initialize the results CSV with headers if it doesn't exist."""
+        if not os.path.exists(self.results_file):
+            with open(self.results_file, mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(["puzzle", "operation_history", "solution_found"])
+
+    def _save_results_to_csv(self, puzzle: str, operation_history: List[str], solution_found: bool) -> None:
+        """Append a result to the CSV file."""
+        with open(self.results_file, mode="a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([puzzle, ";".join(operation_history), solution_found])
 
     def _load_cache(self) -> dict:
         """Load cache from file if it exists, otherwise return empty dict"""
@@ -181,8 +197,8 @@ class TreeOfThoughtBFS(TreeOfThought):
         """
         Main pipeline to solve all puzzles in dataset using ToT approach
         """
-        answer_found, idx = 0, 0
-        for _, row in tqdm(self.data_df.iterrows(), desc=f"Processing {idx + 1} of 50 "):
+        answer_found = 0, 
+        for idx, row in tqdm(self.data_df.iterrows(), total=len(self.data_df), desc="Processing puzzles"):
             pid, puzzle = row["Rank"], row["Puzzle"]
 
             # Check if puzzle is in cache
@@ -190,7 +206,6 @@ class TreeOfThoughtBFS(TreeOfThought):
                 print(f"Puzzle {pid} found in cache, skipping...")
                 if self.cache[puzzle]:
                     answer_found += 1
-                idx += 1
                 continue
 
             print(puzzle)
@@ -215,7 +230,6 @@ class TreeOfThoughtBFS(TreeOfThought):
                 # we run generation for all the current states s in the set of states filtered from the generations at previous iteration
                 # From the paper: S′t ← {[s, z] | s ∈ St−1, zt ∈ G(pθ , s, k)}
                 for state in tqdm(cur_states, desc=f"Step {step + 1}"):
-                    # print(state)
                     operations, temp_next_states = self.generator(state)
                     total_operations_performed.extend(operations)
                     total_temp_next_states.extend(temp_next_states)
@@ -238,17 +252,23 @@ class TreeOfThoughtBFS(TreeOfThought):
             # Check for solutions
             for state in states_tracker[self.total_steps]:
                 if len(state.numbers) == 1 and state.numbers[0] == 24:
-                    answer_found += 1
-                    solution_found = True
-                    solution_tracker.append(state)
-                    print(f"Solution found: {state.operation_history}")
-                    break
+                    if self._validate_solution(state, initial_numbers):
+                        answer_found += 1
+                        solution_found = True
+                        solution_tracker.append(state)
+                        print(f"Solution found: {state.operation_history}")
+                        break
+
+            if solution_tracker:
+                self.cache[puzzle] = True
+                self._save_results_to_csv(puzzle, solution_tracker[0].operation_history, True)
+            else:
+                self.cache[puzzle] = False
+                self._save_results_to_csv(puzzle, states_tracker[self.total_steps][0].operation_history, True)
 
             # Update cache
             self.cache[puzzle] = solution_found
             self._save_cache()
-                
-            idx += 1
 
         print(f"{answer_found} / {len(self.data_df)} answers were found")
 
