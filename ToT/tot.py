@@ -1,20 +1,31 @@
 import os
 import csv
 import json
+import logging
 import requests
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from tqdm import tqdm
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from collections import defaultdict
-from pydantic import BaseModel, RootModel
+from abc import ABC, abstractmethod
 from transformers import AutoTokenizer
+from pydantic import BaseModel, RootModel
 from typing import Dict, List, Optional, Tuple
-
-
 from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bfs_log.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ToTArgs:
@@ -154,9 +165,9 @@ class TreeOfThoughtBFS(TreeOfThought):
     
             except Exception as e:
                 if attempt < self.max_gen_attempts - 1:
-                    print(f"Generator attempt {attempt+1} failed: {e}. Retrying...")
+                    logger.warning(f"Generator attempt {attempt+1} failed: {e}. Retrying...")
                 else:
-                    print(f"Generator failed after {self.max_gen_attempts} attempts: {e}")
+                    logger.error(f"Generator failed after {self.max_gen_attempts} attempts: {e}")
                     return [], [] 
    
     def evaluator(self, temp_next_states: List) -> List[float]:
@@ -184,13 +195,13 @@ class TreeOfThoughtBFS(TreeOfThought):
                     score = 2 if "sure" in value else (1 if "likely" in value else 0)
                     scores.append(score)
                 except Exception as e:
-                    print(f"Error evaluating state {state.numbers}: {e}")
+                    logger.warning(f"Error evaluating state {state.numbers}: {e}")
                     scores.append(0) 
 
             mean_value = np.array(scores).mean()
             next_state_values.append(float(mean_value))
 
-        print(f"Next state values are {next_state_values}")
+        logger.debug(f"State values: {next_state_values}")
         return next_state_values
             
     def run_tot(self):
@@ -203,12 +214,12 @@ class TreeOfThoughtBFS(TreeOfThought):
 
             # Check if puzzle is in cache
             if puzzle in self.cache:
-                print(f"Puzzle {pid} found in cache, skipping...")
+                logger.info(f"Puzzle {pid} found in cache, skipping...")
                 if self.cache[puzzle]:
                     answer_found += 1
                 continue
 
-            print(puzzle)
+            logger.info(f"Processing puzzle {pid}: {puzzle}")
 
             # Flush cache before processing a new puzzle
             self._send_request(url=self.flush_url, payload=None)
@@ -243,9 +254,6 @@ class TreeOfThoughtBFS(TreeOfThought):
                     total_operations_performed, total_temp_next_states, total_values
                 )
 
-                print(f"Selected states: {[s.numbers for s in next_states]}")
-                print(f"State values: {state_values}")
-
                 # Store next states for the next step
                 states_tracker[step + 1] = next_states
 
@@ -256,23 +264,23 @@ class TreeOfThoughtBFS(TreeOfThought):
                         answer_found += 1
                         solution_found = True
                         solution_tracker.append(state)
-                        print(f"Solution found: {state.operation_history}")
                         break
 
-            if solution_tracker:
+            # Update cache and results csv
+            if solution_found:
                 self.cache[puzzle] = True
                 self._save_results_to_csv(puzzle, solution_tracker[0].operation_history, True)
             else:
                 self.cache[puzzle] = False
                 self._save_results_to_csv(puzzle, states_tracker[self.total_steps][0].operation_history, True)
+                logger.warning(f"No valid states generated for puzzle {pid}")
 
             # Update cache
-            self.cache[puzzle] = solution_found
+            # self.cache[puzzle] = solution_found
             self._save_cache()
 
-        print(f"{answer_found} / {len(self.data_df)} answers were found")
-
         accuracy = (answer_found / len(self.data_df)) * 100
+        logger.info(f"{answer_found} / {len(self.data_df)} solutions found ({accuracy:.2f}%)")
 
         with open("results_easy.csv", mode="w", newline="") as file:
             writer = csv.writer(file)
