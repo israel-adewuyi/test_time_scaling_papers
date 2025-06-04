@@ -126,6 +126,47 @@ class TreeOfThoughtBFS(TreeOfThought):
         """Save current cache to file"""
         with open(self.cache_file, 'w') as f:
             json.dump(self.cache, f)
+            
+    def _validate_solution(self, state: State, initial_numbers: List[int]) -> bool:
+        """Validate if the state's operation history correctly produces 24 from initial numbers."""
+        current_numbers = initial_numbers.copy()
+        operators = {'+', '-', '*', '/'}
+        
+        for op in state.operation_history:
+            try:
+                left, right = op.split('=')
+                expr, result = left.strip(), int(right.strip())
+                num1, operator, num2 = left.strip().split()
+                num1, num2 = int(num1), int(num2)
+                
+                if num1 not in current_numbers or num2 not in current_numbers:
+                    return False
+                
+                if operator not in operators:
+                    return False
+                
+                if operator == '+':
+                    computed = num1 + num2
+                elif operator == '-':
+                    computed = num1 - num2
+                elif operator == '*':
+                    computed = num1 * num2
+                elif operator == '/':
+                    if num2 == 0 or num1 % num2 != 0:
+                        return False
+                    computed = num1 // num2
+                
+                if computed != result:
+                    return False
+                
+                current_numbers.remove(num1)
+                current_numbers.remove(num2)
+                current_numbers.append(computed)
+                
+            except (ValueError, ZeroDivisionError):
+                return False
+        
+        return len(current_numbers) == 1 and current_numbers[0] == 24
         
     def generator(self, state: State) -> Tuple[List[str], List[State]]:
         """
@@ -265,6 +306,8 @@ class TreeOfThoughtBFS(TreeOfThought):
                         solution_found = True
                         solution_tracker.append(state)
                         break
+                    else:
+                        logger.warning(f"For state with operation history, {state.operation_history}, the operations applied were probably wrong.")
 
             # Update cache and results csv
             if solution_found:
