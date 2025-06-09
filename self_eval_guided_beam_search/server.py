@@ -35,19 +35,49 @@ class Server:
             self.shutdown
             raise
 
-    def inference(self, prompt: List[int]):
+    def _prepare_payload(
+        self, 
+        prompt: List[str], #ToDO: Verify this bruh
+        num_generations: int, 
+        stop_at_newline: bool, 
+        eval_prompt: bool,
+    ):
+        payload = {
+            "input_ids": prompt,
+            "return_logprob": True,
+            "sampling_params": {}
+        }
+    
+        if num_generations is not None:
+            payload["sampling_params"]["n"] = num_generations
+    
+        if stop_at_newline:
+            payload["sampling_params"]["stop"] = "\n"
+    
+        if eval_prompt:
+            payload["return_text_in_logprobs"] = True
+            payload["token_ids_logprob"] = [4346, 5349]  # Keep only if intended
+    
+        return payload
+        
+
+    def inference(
+        self, 
+        prompt: List[int], 
+        stop_at_newline: bool,
+        eval_prompt: bool = False,
+        num_generations: int = None,
+    ):
         try:
             self.flush_server()
             url = f"http://localhost:{self.port}/generate"
-            data = {
-                "input_ids": prompt,
-                "sampling_params": {
-                        "max_new_tokens": 32
-                    },
-                "return_logprob":True,
-                "top_logprobs_num": 5,
-            }
-            return self._send_request(url, data).json()
+            payload = self._prepare_payload(
+                prompt, 
+                num_generations, 
+                stop_at_newline, 
+                eval_prompt
+            )
+            return self._send_request(url, payload).json()
         except Exception as e:
             self.shutdown
             raise
