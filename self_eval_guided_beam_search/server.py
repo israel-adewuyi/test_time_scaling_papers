@@ -1,5 +1,5 @@
 import requests
-from typing import Optional, List
+from typing import Optional, List, Union
 from sglang.test.test_utils import is_in_ci
 
 if is_in_ci():
@@ -11,7 +11,7 @@ from sglang.utils import wait_for_server, print_highlight, terminate_process
 class Server:
     def __init__(self, model_path: str, port: Optional[int] = 30000) -> None:
         self.server_process, self.port = launch_server_cmd(
-            f"python3 -m sglang.launch_server --model-path {model_path} --port {port} --host 0.0.0.0 --tokenizer-path {model_path}  --log-level error --mem-fraction-static 0.4"
+            f"python3 -m sglang.launch_server --model-path {model_path} --port {port} --host 0.0.0.0 --tokenizer-path {model_path}  --log-level error --mem-fraction-static 0.9"
         )
         wait_for_server(f"http://localhost:{self.port}")
 
@@ -37,7 +37,7 @@ class Server:
 
     def _prepare_payload(
         self, 
-        prompt: List[str], #ToDO: Verify this bruh
+        prompt: Union[List[str], List[int]],
         num_generations: int, 
         stop_at_newline: bool, 
         eval_prompt: bool,
@@ -45,22 +45,24 @@ class Server:
         payload = {
             "input_ids": prompt,
             "return_logprob": True,
-            "sampling_params": {}
+            "sampling_params": {
+                "max_new_tokens": 2048,
+                "temperature": 0.7,
+                "repetition_penalty": 1.05,
+                "top_p": 0.8,
+                "top_k": 20,
+            }
         }
-    
+
         if num_generations is not None:
             payload["sampling_params"]["n"] = num_generations
-    
         if stop_at_newline:
             payload["sampling_params"]["stop"] = "\n"
-    
         if eval_prompt:
             payload["return_text_in_logprobs"] = True
-            payload["token_ids_logprob"] = [4346, 5349]  # Keep only if intended
-    
+            payload["token_ids_logprob"] = [4346, 5349, 32, 33]
         return payload
         
-
     def inference(
         self, 
         prompt: List[int], 
