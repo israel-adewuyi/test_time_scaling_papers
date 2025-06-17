@@ -41,23 +41,24 @@ class Server:
         num_generations: int, 
         stop_at_newline: bool, 
         eval_prompt: bool,
+        sampling_temp: float,
+        max_tokens: int,
     ):
         payload = {
             "input_ids": prompt,
             "return_logprob": True,
             "sampling_params": {
-                "max_new_tokens": 2048,
-                "temperature": 0.7,
+                "max_new_tokens": max_tokens,
                 "repetition_penalty": 1.05,
                 "top_p": 0.8,
                 "top_k": 20,
             }
         }
-
+        payload["sampling_params"]["temperature"] = sampling_temp
         if num_generations is not None:
             payload["sampling_params"]["n"] = num_generations
         if stop_at_newline:
-            payload["sampling_params"]["stop"] = "\n"
+            payload["sampling_params"]["stop"] = "/r"
         if eval_prompt:
             payload["return_text_in_logprobs"] = True
             payload["token_ids_logprob"] = [4346, 5349, 32, 33]
@@ -69,6 +70,8 @@ class Server:
         stop_at_newline: bool,
         eval_prompt: bool = False,
         num_generations: int = None,
+        sampling_temp: float = 0.6,
+        max_tokens: int = 2048
     ):
         try:
             self.flush_server()
@@ -77,7 +80,9 @@ class Server:
                 prompt, 
                 num_generations, 
                 stop_at_newline, 
-                eval_prompt
+                eval_prompt,
+                sampling_temp,
+                max_tokens=max_tokens
             )
             return self._send_request(url, payload).json()
         except Exception as e:
