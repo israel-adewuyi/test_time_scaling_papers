@@ -15,17 +15,21 @@ from pydantic import BaseModel, RootModel
 from typing import Dict, List, Optional, Tuple
 from prompt import PROPOSE_PROMPT_24, VALUE_PROMPT_24
 
+os.makedirs('logs', exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bfs_log.log'),
-        logging.StreamHandler()
-    ]
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='logs/app.log',
+    filemode='a'
 )
+
+# Add console handler
 logger = logging.getLogger(__name__)
+# console_handler = logging.StreamHandler()
+# console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+# logger.addHandler(console_handler)
 
 @dataclass
 class ToTArgs:
@@ -223,8 +227,7 @@ class TreeOfThoughtBFS(TreeOfThought):
             List of average evaluation score for each state
         """
         next_state_values = []
-        print("Evaluating states")
-        for state in temp_next_states:
+        for state in tqdm(temp_next_states, desc="Evaluating states"):
             prompt = VALUE_PROMPT_24.format(input_numbers=state.to_prompt_string())
             payload = self._prepare_payload(prompt)
             scores = []
@@ -246,10 +249,11 @@ class TreeOfThoughtBFS(TreeOfThought):
         return next_state_values
             
     def run_tot(self):
+        logger.info("Starting run_tot...")
         """
         Main pipeline to solve all puzzles in dataset using ToT approach
         """
-        answer_found = 0, 
+        answer_found = 0 
         for idx, row in tqdm(self.data_df.iterrows(), total=len(self.data_df), desc="Processing puzzles"):
             pid, puzzle = row["Rank"], row["Puzzle"]
 
@@ -400,7 +404,10 @@ class TreeOfThoughtBFS(TreeOfThought):
         
             
 if __name__ == "__main__":
+    logger.info("Script started")
     arg = ToTArgs()
+    logger.info("ToTArgs initialized")
     tot = TreeOfThoughtBFS(arg)
+    logger.info("TreeOfThoughtBFS initialized")
     tot.run_tot()
     
