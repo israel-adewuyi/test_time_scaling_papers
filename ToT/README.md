@@ -17,13 +17,15 @@ I also implemented IO as baseline, with `100` iterations per puzzle.
 All of these were evaluated with `Qwen/Qwen2.5-32B`
 
 ## Directory Structure
+```
 ToT/
 ├── data/                   # Game of 24 datasets scraped from [4nums.com](https://www.4nums.com/game/difficulties/)
 ├── tot.py                  # Main ToT implementation
 ├── scrape.py               # Web scraper for puzzles
 ├── prompts.py              # Prompt templates for both generation and evaluation
 ├── baseline.py             # Used to run baseline eval (I/O and CoT)
-└── README.md               
+└── README.md
+```           
 
 
 ## Results.
