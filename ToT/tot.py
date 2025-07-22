@@ -29,20 +29,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ToTArgs:
-    generations_per_step: int = 8 # Number of thoughts to generate per step
-    total_steps: int = 3 # Max tree dedpth
-    data_dir: str = "data/game_of_24_easy.csv" # Path to game of 24 dataset
-    model_name: str = "Qwen/Qwen2.5-32B" # LLM to use for gen and eval
-    num_eval_attempts: int = 3 # Number of evaluation attempts per state
-    max_gen_attempts: int = 10 # Max attempts for generation if API fails
-    cache_file: str = "b=5.json" # File to cache results
+    generations_per_step: int = 8 
+    total_steps: int = 3 
+    data_dir: str = "data/game_of_24_easy.csv" 
+    model_name: str = "Qwen/Qwen2.5-32B" 
+    num_eval_attempts: int = 3 
+    max_gen_attempts: int = 10 
+    cache_file: str = "b=5.json" 
 
     # sglang-rollout specific args
-    temperature: float = 0.5  # Temperature for sampling
-    max_new_tokens: int = 2048 # Max number of tokens to generate
+    temperature: float = 0.5 
+    max_new_tokens: int = 2048 
 
     # BFS-specific arg
-    breadth_limit: int = 5 # Number of top states to keep at each step
+    breadth_limit: int = 5 
 
 
 @dataclass
