@@ -26,12 +26,13 @@ load_dotenv()
 class SEvRArgs:
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     port: int = 30000
-    num_samples: int = 6
+    num_samples: int = 11
     num_beams: int = 3
     lambda_k: int = 0.7
     tau: float = 0.6
     og_tau: float = 0.6
     alpha: float = 0.8
+    sampling_temp: float = 0.9
 
 class SEvR:
     """ Self-Evaluated Guided Beam Search for Reasoning (SEvR or pronounded sever)
@@ -126,7 +127,8 @@ class SEvR:
         tokens: List[int],
         num_generations: int = None,
         stop_at_newline: bool = False,
-        eval_prompt: bool = False
+        eval_prompt: bool = False,
+        sampling_temp: float = 0.6
     ) -> Union[list, dict]:
         """ 
             Run inference for a list of tokens 
@@ -137,7 +139,8 @@ class SEvR:
                 prompt=tokens,
                 num_generations=num_generations,
                 stop_at_newline=stop_at_newline,
-                eval_prompt=eval_prompt
+                eval_prompt=eval_prompt,
+                sampling_temp=sampling_temp
             ) 
         except Exception as e:
             self.server.shutdown()
@@ -158,7 +161,8 @@ class SEvR:
                     responses = self.generate(
                         tokens=tokens,
                         num_generations=self.args.num_samples,
-                        stop_at_newline=True
+                        stop_at_newline=True,
+                        sampling_temp=self.args.sampling_temp
                     )
                     responses = self.append_input_str(responses, beam["text"])
                 for res in responses:
@@ -176,7 +180,7 @@ class SEvR:
                 self._decay_tau()
                 beams = self._prune_beam(responses)
                 num_iter += 1
-                if all(beam["meta_info"]["is_complete"] for beam in beams) or num_iter == 40:
+                if all(beam["meta_info"]["is_complete"] for beam in beams) or num_iter == 10:
                     break
 
             self._reset_tau()
@@ -320,7 +324,7 @@ if __name__ == "__main__":
             "ground_truth": row["answer"],
             "beams": beams,
         })
-        with open(f"results_qwen2.5-7B.json", 'w') as f:
+        with open(f"results/results_qwen2.5-7B_num_samples={args.num_samples}_num_beams={args.num_beams}.json", 'w') as f:
             json.dump(output, f, indent=2)
 
     self_eval_reasoner.shutdown

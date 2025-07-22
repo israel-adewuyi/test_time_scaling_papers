@@ -66,7 +66,7 @@ class Server:
         
     def inference(
         self, 
-        prompt: List[int], 
+        prompt: Union[List[int], List[str]], 
         stop_at_newline: bool,
         eval_prompt: bool = False,
         num_generations: int = None,
