@@ -1,32 +1,16 @@
-# Tree of Thought Implementation for Game of 24
+# Implementation of [Tree of Thought Implementation](https://arxiv.org/abs/2305.10601) for Game of 24
 
-This repository contains an implementation of the Tree of Thought (ToT) framework from the paper ["Tree of Thoughts: Deliberate Problem Solving with Large Language Models"](https://arxiv.org/abs/2305.10601) applied to the Game of 24.
-
-## Overview
-
-The Tree of Thought approach decomposes tasks into thoughts (decomposition is task-specific). Thoughts are generated as potential nodes on a tree and evaluation determines which thoughts are promising and are to be further explored. 
-
-The goal of the Game of 24 is to combine four numbers using basic arithmetic operations (+,-,*,/) to reach the number 24.
-
-In this implementation, BFS is used to evaluate and explore promising thoughts / states. 
-
-`breadth_limit` promising thoughts / states are maintained per step.
-
-I also implemented IO as baseline, with `100` iterations per puzzle.
-
-All of these were evaluated with `Qwen/Qwen2.5-32B`
-
-## Directory Structure
-```
-ToT/
-├── data/                   # Game of 24 datasets scraped from [4nums.com](https://www.4nums.com/game/difficulties/)
-├── tot.py                  # Main ToT implementation
-├── scrape.py               # Web scraper for puzzles
-├── prompts.py              # Prompt templates for both generation and evaluation
-├── baseline.py             # Used to run baseline eval (I/O and CoT)
-└── README.md
-```           
-
+## Implementation Details
+- This repo implmements the [Tree of Thought Implementation](https://arxiv.org/abs/2305.10601) for the Game of 24, described in the paper.
+- `scrape.py` scrapes the [4nums.com](https://www.4nums.com/game/difficulties/) website and save a subset of them to be used.
+- `tot.py` contains the main implementation for ToT.
+- `baseline.py` implements Input/Output (IO) and CoT prompting as baselines for the Game of 24 task (although I only ran experiments for IO due to computing resources).
+- `prompt.py` contains all the prompts used across ToT task and the baseline tasks. The baseline prompts were copied from the original implementation of the paper.
+- `data/` contains the actual subset of the Game of 24 I ran the experiments on.
+- I ran ToT pipeline with two values of b, `b=1` and `b=5`.
+- For the baseline, I ran IO task, with 100 iterations for a single game and averaging the performance.
+- [Qwen/Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct) was used for this experiments.
+- All the experiments were conducted on a single Nvidia A100 GPU.
 
 ## Results.
 | Approach | Results  | 
