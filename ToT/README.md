@@ -1,4 +1,4 @@
-# Implementation of [Tree of Thought Implementation](https://arxiv.org/abs/2305.10601) for Game of 24
+# Implementation of [Tree of Thought](https://arxiv.org/abs/2305.10601) for Game of 24
 
 ## Implementation Details
 - This repo implmements the [Tree of Thought Implementation](https://arxiv.org/abs/2305.10601) for the Game of 24, described in the paper.
